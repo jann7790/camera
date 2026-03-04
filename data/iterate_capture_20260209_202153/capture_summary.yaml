@@ -1,0 +1,168 @@
+capture_time: '2026-02-09T20:22:05.981654'
+exposure_list:
+- 1000
+- 2000
+- 5000
+flip_horizontal: false
+flip_vertical: false
+gain_list:
+- 3.0
+- 6.0
+- 9.0
+output_directory: iterate_capture_20260209_202153
+results:
+- annotated_image: exp1000_gain3.0_annotated.png
+  exposure_us: 1000
+  gain_db: 3.0
+  index: 1
+  raw_image: exp1000_gain3.0_raw.png
+  stats:
+    black_mean: 7.0
+    contrast: 1.00260588940362
+    max: 67
+    mean: 7.930137152777778
+    min: 7
+    overexposed_pct: 0.0
+    std: 0.31677396527808976
+    threshold: 7
+    underexposed_pct: 0.0
+    white_mean: 8.00260588940362
+  timestamp: '2026-02-09T20:21:56.565072'
+- annotated_image: exp1000_gain6.0_annotated.png
+  exposure_us: 1000
+  gain_db: 6.0
+  index: 2
+  raw_image: exp1000_gain6.0_raw.png
+  stats:
+    black_mean: 7.0
+    contrast: 1.0198771956176405
+    max: 66
+    mean: 7.097250868055555
+    min: 7
+    overexposed_pct: 0.0
+    std: 0.3473969340301552
+    threshold: 7
+    underexposed_pct: 0.0
+    white_mean: 8.01987719561764
+  timestamp: '2026-02-09T20:21:57.769008'
+- annotated_image: exp1000_gain9.0_annotated.png
+  exposure_us: 1000
+  gain_db: 9.0
+  index: 3
+  raw_image: exp1000_gain9.0_raw.png
+  stats:
+    black_mean: 7.0
+    contrast: 1.0026746870128616
+    max: 68
+    mean: 7.937188802083333
+    min: 7
+    overexposed_pct: 0.0
+    std: 0.30861554643213723
+    threshold: 7
+    underexposed_pct: 0.0
+    white_mean: 8.002674687012862
+  timestamp: '2026-02-09T20:21:58.955045'
+- annotated_image: exp2000_gain3.0_annotated.png
+  exposure_us: 2000
+  gain_db: 3.0
+  index: 4
+  raw_image: exp2000_gain3.0_raw.png
+  stats:
+    black_mean: 8.019392069031372
+    contrast: 29.088941264301962
+    max: 84
+    mean: 8.020907118055556
+    min: 7
+    overexposed_pct: 0.0
+    std: 0.29154826772699416
+    threshold: 22
+    underexposed_pct: 0.0
+    white_mean: 37.108333333333334
+  timestamp: '2026-02-09T20:22:00.029235'
+- annotated_image: exp2000_gain6.0_annotated.png
+  exposure_us: 2000
+  gain_db: 6.0
+  index: 5
+  raw_image: exp2000_gain6.0_raw.png
+  stats:
+    black_mean: 8.079064585073155
+    contrast: 40.920935414926845
+    max: 115
+    mean: 8.081266927083334
+    min: 7
+    overexposed_pct: 0.0
+    std: 0.4553685653538592
+    threshold: 28
+    underexposed_pct: 0.0
+    white_mean: 49.0
+  timestamp: '2026-02-09T20:22:01.200579'
+- annotated_image: exp2000_gain9.0_annotated.png
+  exposure_us: 2000
+  gain_db: 9.0
+  index: 6
+  raw_image: exp2000_gain9.0_raw.png
+  stats:
+    black_mean: 7.999995681241039
+    contrast: 1.0136368423036064
+    max: 130
+    mean: 8.606157552083333
+    min: 7
+    overexposed_pct: 0.0
+    std: 0.6276960056624251
+    threshold: 8
+    underexposed_pct: 0.0
+    white_mean: 9.013632523544645
+  timestamp: '2026-02-09T20:22:02.411265'
+- annotated_image: exp5000_gain3.0_annotated.png
+  exposure_us: 5000
+  gain_db: 3.0
+  index: 7
+  raw_image: exp5000_gain3.0_raw.png
+  stats:
+    black_mean: 9.01807391292836
+    contrast: 57.446493016205494
+    max: 165
+    mean: 9.02124045138889
+    min: 8
+    overexposed_pct: 0.0
+    std: 0.5594013940040596
+    threshold: 37
+    underexposed_pct: 0.0
+    white_mean: 66.46456692913385
+  timestamp: '2026-02-09T20:22:03.580507'
+- annotated_image: exp5000_gain6.0_annotated.png
+  exposure_us: 5000
+  gain_db: 6.0
+  index: 8
+  raw_image: exp5000_gain6.0_raw.png
+  stats:
+    black_mean: 10.366121364198069
+    contrast: 76.35019069253953
+    max: 204
+    mean: 10.370793836805555
+    min: 9
+    overexposed_pct: 0.0
+    std: 0.889736639813099
+    threshold: 48
+    underexposed_pct: 0.0
+    white_mean: 86.71631205673759
+  timestamp: '2026-02-09T20:22:04.778071'
+- annotated_image: exp5000_gain9.0_annotated.png
+  exposure_us: 5000
+  gain_db: 9.0
+  index: 9
+  raw_image: exp5000_gain9.0_raw.png
+  stats:
+    black_mean: 10.157470184716727
+    contrast: 90.85604332879679
+    max: 211
+    mean: 10.163306423611111
+    min: 9
+    overexposed_pct: 0.0
+    std: 0.965457813570912
+    threshold: 55
+    underexposed_pct: 0.0
+    white_mean: 101.01351351351352
+  timestamp: '2026-02-09T20:22:05.964138'
+rotation: 0
+total_images: 9

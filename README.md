@@ -6,37 +6,38 @@ FLIR 相機拍攝與 CCTag / Barcode 偵測專案。
 
 ## Shell 腳本說明
 
+所有腳本位於 `scripts/` 目錄，從專案根目錄執行：
+
 ### 主要入口
 
 | 腳本 | 功能 |
 |------|------|
-| `run_camera.sh` | 啟動 FLIR 相機預覽程式，可傳入 `--exposure`、`--gain`、`--format` 等參數 |
-| `run_cctag.sh` | 啟動 CCTag marker 偵測，支援 FLIR 相機、靜態圖片、webcam，可透過命令列調整所有 detection 參數 |
-| `barcode_tools_menu.sh` | 互動式選單，整合所有 barcode 相關工具的入口（選項 1~7） |
+| `scripts/run_camera.sh` | 啟動 FLIR 相機預覽程式，可傳入 `--exposure`、`--gain`、`--format` 等參數 |
+| `scripts/run_cctag.sh` | 啟動 CCTag marker 偵測，支援 FLIR 相機、靜態圖片、webcam，可透過命令列調整所有 detection 參數 |
+| `scripts/barcode_tools_menu.sh` | 互動式選單，整合所有 barcode 相關工具的入口（選項 1~7） |
 
 ### 參數調整與拍攝
 
 | 腳本 | 功能 |
 |------|------|
-| `run_live_tuner.sh` | 即時調參工具，用鍵盤即時調整曝光/增益，觀察 barcode 清晰度 |
-| `run_iterate_capture.sh` | 自動迭代拍攝工具，批次測試多組曝光＋增益組合並儲存影像供比較 |
-| `quick_barcode_test.sh` | 快速跑 4 組預設參數配置（短曝光低增益、中曝光中增益、較長曝光、16bit 高精度） |
+| `scripts/run_live_tuner.sh` | 即時調參工具，用鍵盤即時調整曝光/增益，觀察 barcode 清晰度 |
+| `scripts/run_iterate_capture.sh` | 自動迭代拍攝工具，批次測試多組曝光＋增益組合並儲存影像供比較 |
+| `scripts/quick_barcode_test.sh` | 快速跑 4 組預設參數配置（短曝光低增益、中曝光中增益、較長曝光、16bit 高精度） |
 
 ### 設定與報告
 
 | 腳本 | 功能 |
 |------|------|
-| `apply_best_config.sh` | 讀取 `results/best_config.yaml`，將最佳參數合併套用到 `camera_config.yaml`（會先自動備份） |
-| `view_report.sh` | 在本地啟動 HTTP server（port 8000），用瀏覽器開啟 HTML 分析報告 |
+| `scripts/apply_best_config.sh` | 讀取 `results/best_config.yaml`，將最佳參數合併套用到 `camera_config.yaml`（會先自動備份） |
 
 ---
 
 ## 建議使用流程
 
-1. **找參數**：執行 `run_live_tuner.sh` 或透過 `barcode_tools_menu.sh` 互動選單
-2. **批次驗證**：執行 `run_iterate_capture.sh` 批次拍攝多組參數
-3. **套用設定**：執行 `apply_best_config.sh` 將最佳參數寫入 `camera_config.yaml`
-4. **正式運行**：執行 `run_camera.sh` 或 `run_cctag.sh`
+1. **找參數**：執行 `scripts/run_live_tuner.sh` 或透過 `scripts/barcode_tools_menu.sh` 互動選單
+2. **批次驗證**：執行 `scripts/run_iterate_capture.sh` 批次拍攝多組參數
+3. **套用設定**：執行 `scripts/apply_best_config.sh` 將最佳參數寫入 `camera_config.yaml`
+4. **正式運行**：執行 `scripts/run_camera.sh` 或 `scripts/run_cctag.sh`
 
 ---
 
@@ -58,23 +59,23 @@ FLIR 相機拍攝與 CCTag / Barcode 偵測專案。
 
 ```bash
 # FLIR 相機，預設參數
-./run_cctag.sh --flir
+scripts/run_cctag.sh --flir
 
 # FLIR + 速度調優（只有少數 tag 時）
-./run_cctag.sh --flir --max-seeds 100 --max-candidates 10 \
+scripts/run_cctag.sh --flir --max-seeds 100 --max-candidates 10 \
     --cuts-trials 100 --no-arc-search --multires-layers 2 --no-lmdif
 
 # FLIR + 輸入圖像縮小 50%（最直接的加速方式）
-./run_cctag.sh --flir --downscale 0.5
+scripts/run_cctag.sh --flir --downscale 0.5
 
 # 對靜態圖片偵測
-./run_cctag.sh --image photo.jpg
+scripts/run_cctag.sh --image photo.jpg
 
 # 使用 webcam
-./run_cctag.sh --webcam --cam-index 0
+scripts/run_cctag.sh --webcam --cam-index 0
 
 # 查看所有參數
-./run_cctag.sh -h
+scripts/run_cctag.sh -h
 ```
 
 ### 所有命令列參數
@@ -124,6 +125,8 @@ FLIR 相機拍攝與 CCTag / Barcode 偵測專案。
 ### Python API
 
 ```python
+import sys
+sys.path.insert(0, "lib")  # for _cctag_native.so
 import _cctag_native as cn
 
 # 建立 Detector（Parameters 和 MarkersBank 只初始化一次，後續每幀複用）
@@ -220,25 +223,56 @@ det.use_lmdif = False                # 不做 LM 精煉
 
 ```
 camera/
-├── run_camera.sh            # 相機預覽
-├── run_cctag.sh             # CCTag 偵測（支援命令列調參）
-├── cctag_detector.py        # CCTag 偵測主程式
-├── cctag_binding.cpp        # CCTag C++ pybind11 binding（含 Detector class）
-├── _cctag_native.*.so       # 編譯後的 CCTag binding
-├── run_live_tuner.sh        # 即時調參
-├── run_iterate_capture.sh   # 迭代拍攝
-├── barcode_tools_menu.sh    # 工具選單
-├── quick_barcode_test.sh    # 快速測試
-├── apply_best_config.sh     # 套用最佳設定
-├── flir_camera_preview.py   # FLIR 相機擷取核心
-├── camera_config.yaml       # 相機設定檔
-├── binding_build/           # CMake 編譯目錄
+├── .gitignore               # Git 忽略規則
+├── README.md                # 本文件
 ├── requirements.txt         # Python 依賴套件
+├── camera_config.yaml       # 相機設定檔
+│
+├── scripts/                 # Shell 啟動腳本
+│   ├── run_cctag.sh         #   CCTag 偵測
+│   ├── run_camera.sh        #   FLIR 相機預覽
+│   ├── run_live_tuner.sh    #   即時調參
+│   ├── run_iterate_capture.sh #  迭代拍攝
+│   ├── barcode_tools_menu.sh #  工具選單
+│   ├── quick_barcode_test.sh #  快速測試
+│   └── apply_best_config.sh #   套用最佳設定
+│
+├── src/                     # Python 原始碼
+│   ├── cctag_detector.py    #   CCTag 偵測主程式
+│   ├── flir_camera_preview.py # FLIR 相機擷取核心
+│   ├── live_barcode_tuner.py #  即時 barcode 調參
+│   ├── barcode_search.py    #   自動參數搜索
+│   ├── iterate_capture.py   #   迭代拍攝
+│   ├── switch_config.py     #   預設配置切換
+│   ├── analyze_flashlight_test.py # 閃光燈分析
+│   ├── analyze_flashlight_static.py # 靜態閃光燈分析
+│   ├── print_analysis_summary.py #  分析摘要輸出
+│   ├── focal_length_optimizer.py # 焦距最佳化
+│   └── regenerate_grid.py   #   網格重建
+│
+├── binding/                 # C++ pybind11 binding 原始碼
+│   ├── cctag_binding.cpp    #   CCTag binding（含 Detector class）
+│   └── CMakeLists.txt       #   CMake 編譯設定
+│
+├── lib/                     # 編譯後的共享函式庫（gitignored）
+│   └── _cctag_native.*.so   #   CCTag Python binding
+│
+├── examples/                # 範例圖片
+│   ├── cctag.jpg            #   CCTag 原圖
+│   └── cctag_result.jpg     #   偵測結果圖
+│
+├── docs/                    # 文件
+│   ├── README_barcode_tools.md # Barcode 工具說明
+│   ├── ANALYSIS_REPORT.md   #   分析報告
+│   └── ...                  #   其他文件
+│
+├── data/                    # 實驗資料（gitignored，280MB+）
+│   ├── fullrange_scan/      #   全範圍曝光/增益掃描
+│   ├── indoor/              #   室內拍攝資料
+│   ├── outdoor/             #   室外拍攝資料
+│   ├── iterate_capture_*/   #   迭代拍攝實驗結果
+│   └── focal_analysis/      #   焦距分析資料
+│
 ├── results/                 # 搜索結果與最佳配置
-├── indoor/                  # 室內拍攝資料
-├── outdoor/                 # 室外拍攝資料
-├── fullrange_scan/          # 全範圍曝光/增益掃描結果
-├── iterate_capture_*/       # 迭代拍攝實驗結果
-├── analysis_plots/          # 分析圖表
-└── focal_analysis/          # 焦距分析資料
+└── analysis_plots/          # 分析圖表
 ```
