@@ -1,3 +1,0 @@
-/home/gram424/camera/binding_build/build/CMakeFiles/_cctag_native.dir
-/home/gram424/camera/binding_build/build/CMakeFiles/edit_cache.dir
-/home/gram424/camera/binding_build/build/CMakeFiles/rebuild_cache.dir
