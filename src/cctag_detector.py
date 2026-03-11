@@ -97,6 +97,140 @@ def create_detector(args):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 6-bit 資料格解碼
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def decode_data_cells(gray, d):
+    """
+    從 CCTag 偵測結果解碼左右兩側的 6-bit 資料格。
+
+    資料格佈局（與 display_marker.py draw_data_cells() 完全對應）：
+      - 左欄 (top→bottom): b5, b4, b3
+      - 右欄 (top→bottom): b2, b1, b0
+      - 黑格 = 1, 白格 = 0
+      - 組合值 = b5 b4 b3 b2 b1 b0 (6-bit, 0–63)
+
+    幾何關係（相對於 marker 邊界推算，不依賴 marker 在畫面中的絕對位置）：
+      cell_margin = int(radius * 0.06)
+      cell_h      = int(radius * 2 / 3)
+      cell_w      = cell_h                                  # 正方形
+      left_x      = int(cx - radius) - cell_margin - cell_w # marker 左邊界往左
+      right_x     = int(cx + radius) + cell_margin           # marker 右邊界往右
+      top_y       = cy - 1.5 * cell_h
+
+    Parameters
+    ----------
+    gray : grayscale ndarray
+    d    : detect() 回傳的單一 dict
+
+    Returns
+    -------
+    dict with keys:
+      bits  : list[int] length-6, index 0=b0 … 5=b5
+      value : int  (0–63)
+      valid : bool (False if any ROI is out of bounds)
+      rois  : list of (x0,y0,x1,y1) for the 6 cells in order [L-top…L-bot, R-top…R-bot]
+    """
+    _INVALID = {"bits": [0]*6, "value": 0, "valid": False, "rois": []}
+
+    ih, iw = gray.shape[:2]
+
+    cx = d["ellipse_cx"]
+    cy = d["ellipse_cy"]
+    radius = d["ellipse_a"]   # horizontal semi-axis
+
+    if radius <= 0:
+        return _INVALID
+
+    cell_margin = int(radius * 0.06)
+    cell_h      = int(radius * 2 / 3)
+    cell_w      = cell_h   # 正方形 cell
+
+    if cell_w < 4 or cell_h < 4:
+        return _INVALID
+
+    top_y   = cy - 1.5 * cell_h
+    left_x  = int(cx - radius) - cell_margin - cell_w   # 從 marker 左邊界往左推
+    right_x = int(cx + radius) + cell_margin             # 從 marker 右邊界往右推
+
+    # Build ROI list: left b5,b4,b3 then right b2,b1,b0
+    roi_bit_index = [5, 4, 3, 2, 1, 0]
+    rois = []
+    for i in range(3):
+        y0 = int(top_y + i * cell_h)
+        y1 = y0 + cell_h
+        rois.append((int(left_x), y0, int(left_x) + cell_w, y1))
+    for i in range(3):
+        y0 = int(top_y + i * cell_h)
+        y1 = y0 + cell_h
+        rois.append((int(right_x), y0, int(right_x) + cell_w, y1))
+
+    # 讀取各 cell 的平均亮度
+    cell_means = []
+    for x0, y0, x1, y1 in rois:
+        x0c = max(0, x0); y0c = max(0, y0)
+        x1c = min(iw, x1); y1c = min(ih, y1)
+        if x1c <= x0c or y1c <= y0c:
+            return _INVALID
+        patch = gray[y0c:y1c, x0c:x1c]
+        cell_means.append(float(np.mean(patch)))
+
+    # 排序後找相鄰差值最大的間距，以間距兩側的中點作為黑白分割閾值
+    # 例如 [40,40,40,42,90,92] → 最大間距在 42→90，分割點 = 66 → 黑群/白群正確分開
+    sorted_vals = sorted(cell_means)
+    gaps = [sorted_vals[i + 1] - sorted_vals[i] for i in range(5)]
+    max_gap = max(gaps)
+
+    # 若最大間距過小，表示 6 格亮度無明顯黑白差異 → 視為無效
+    if max_gap < 10:
+        return _INVALID
+
+    split_idx = gaps.index(max_gap)
+    threshold = (sorted_vals[split_idx] + sorted_vals[split_idx + 1]) / 2.0
+
+    bits = [0] * 6
+    for roi_i, mean_val in enumerate(cell_means):
+        bits[roi_bit_index[roi_i]] = 1 if mean_val <= threshold else 0
+
+    value = sum(bits[i] << i for i in range(6))
+    return {"bits": bits, "value": value, "valid": True, "rois": rois}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 偵測結果過濾（減少 false positive）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def filter_detections(results, min_quality=0.8):
+    """
+    過濾低品質與無效的 CCTag 偵測結果。
+
+    過濾條件：
+      1. status != 1 → 無效偵測（CCTag library 自身標記）
+      2. id < 0      → 未識別出 ID
+      3. quality < min_quality → 信心分數過低（false positive）
+
+    Parameters
+    ----------
+    results     : list of dict (detect() 回傳)
+    min_quality : float, 最低品質閾值（預設 0.8）
+
+    Returns
+    -------
+    list of dict : 通過過濾的偵測結果
+    """
+    filtered = []
+    for d in results:
+        if d.get("status", 0) != 1:
+            continue
+        if d.get("id", -1) < 0:
+            continue
+        if d.get("quality", 0.0) < min_quality:
+            continue
+        filtered.append(d)
+    return filtered
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 繪圖工具
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -117,15 +251,18 @@ def _color_for_id(tag_id):
     return _COLORS[tag_id % len(_COLORS)]
 
 
-def draw_detections(frame, detections):
+def draw_detections(frame, detections, decode_bits=True):
     """
-    在圖像上繪製 CCTag 偵測結果。
+    在圖像上繪製 CCTag 偵測結果，並可選地疊加解碼的 6-bit 資料格。
 
     Parameters
     ----------
-    frame      : BGR 圖像（會被直接修改）
-    detections : detect() 回傳的 list of dict
+    frame       : BGR 圖像（會被直接修改）
+    detections  : detect() 回傳的 list of dict
+    decode_bits : True = 同時解碼並顯示左右資料格 (預設開啟)
     """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
     for d in detections:
         tag_id = d["id"]
         cx, cy = int(d["x"]), int(d["y"])
@@ -153,6 +290,27 @@ def draw_detections(frame, detections):
         cv2.putText(frame, text, (cx + 12, cy - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
+        # ── 6-bit 資料格解碼與視覺化 ─────────────────────────────────────
+        if decode_bits:
+            dec = decode_data_cells(gray, d)
+            if dec["valid"]:
+                val = dec["value"]
+                bits = dec["bits"]  # bits[5..0]
+                bit_str = "".join(str(bits[i]) for i in range(5, -1, -1))
+
+                # 在每個 ROI 格子畫框：bit=1 紅框, bit=0 綠框
+                roi_bit_index = [5, 4, 3, 2, 1, 0]
+                for ri, (x0, y0, x1, y1) in enumerate(dec["rois"]):
+                    bit_val = bits[roi_bit_index[ri]]
+                    rect_color = (0, 0, 220) if bit_val == 1 else (0, 200, 0)
+                    cv2.rectangle(frame, (x0, y0), (x1, y1), rect_color, 2)
+
+                # 資料文字標籤
+                data_text = f"DATA:{val} (0b{bit_str})"
+                cv2.putText(frame, data_text,
+                            (cx + 12, cy + 16),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 200, 0), 2)
+
     return frame
 
 
@@ -160,7 +318,7 @@ def draw_detections(frame, detections):
 # OSD（On-Screen Display）
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def draw_osd(frame, fps, detect_ms, num_detections, det):
+def draw_osd(frame, fps, detect_ms, num_detections, det, min_quality=0.8):
     """繪製左上角的即時資訊。"""
     lines = [
         f"FPS: {fps:.1f}  detect: {detect_ms:.1f}ms",
@@ -178,7 +336,8 @@ def draw_osd(frame, fps, detect_ms, num_detections, det):
         f"cuts:{det.cuts_selection_trials} "
         f"layers:{det.processed_multires_layers} "
         f"arc:{'Y' if det.search_another_segment else 'N'} "
-        f"LM:{'Y' if det.use_lmdif else 'N'}"
+        f"LM:{'Y' if det.use_lmdif else 'N'} "
+        f"minQ:{min_quality:.2f}"
     )
     h = frame.shape[0]
     cv2.putText(frame, params_text, (10, h - 10),
@@ -227,6 +386,17 @@ def run_with_flir_camera(det, args):
         print(f"[WARN] 找不到 {config_path}，使用預設設定")
         config = None
 
+    # 低延遲模式：在 CCTag 即時偵測中，優先降低卡頓與延遲
+    if config is None:
+        config = {}
+    perf = config.setdefault("performance", {})
+    if perf.get("buffer_count", 10) > 3:
+        perf["buffer_count"] = 3
+        print("[CCTag] 低延遲模式：buffer_count 調整為 3")
+    if perf.get("image_timeout_ms", 1000) > 300:
+        perf["image_timeout_ms"] = 300
+        print("[CCTag] 低延遲模式：image_timeout_ms 調整為 300ms")
+
     # 初始化相機（複用 flir_camera_preview.py）
     from flir_camera_preview import FLIRCameraPreview
 
@@ -241,6 +411,15 @@ def run_with_flir_camera(det, args):
         print("[ERROR] 開始擷取失敗")
         return
 
+    # 只保留最新幀，避免因偵測耗時而產生顯示延遲
+    try:
+        cam_preview.cam.TLStream.StreamBufferHandlingMode.SetValue(
+            PySpin.StreamBufferHandlingMode_NewestOnly
+        )
+        print("[CCTag] 已啟用低延遲串流（NewestOnly）")
+    except Exception:
+        pass
+
     print("CCTag 偵測中... 按 'q' 退出，'s' 儲存目前畫面")
     _print_detector_config(det)
 
@@ -250,6 +429,25 @@ def run_with_flir_camera(det, args):
     fps_timer = time.time()
     frame_id = 0
     timeout_ms = config["performance"]["image_timeout_ms"] if config else 1000
+    display_skip = max(1, args.display_skip)
+
+    # ── 啟動時取一幀，決定 is_color 旗標與顯示尺寸（只算一次）───────────────
+    _display_size: tuple[int, int] | None = None
+    is_color = False
+    try:
+        _probe = cam_preview.cam.GetNextImage(timeout_ms)
+        if not _probe.IsIncomplete():
+            _probe_arr = _probe.GetNDArray()
+            if _probe_arr is not None:
+                is_color = (_probe_arr.ndim == 3)
+                _probe_gray = cv2.cvtColor(_probe_arr, cv2.COLOR_BGR2GRAY) if is_color else _probe_arr
+                _probe_disp = cv2.cvtColor(_probe_gray, cv2.COLOR_GRAY2BGR)
+                _probe_scaled = auto_scale(_probe_disp)
+                _ph, _pw = _probe_scaled.shape[:2]
+                _display_size = (_pw, _ph)
+        _probe.Release()
+    except Exception:
+        pass
 
     try:
         while True:
@@ -266,11 +464,8 @@ def run_with_flir_camera(det, args):
                 if img_data is None:
                     continue
 
-                # 確保是灰階
-                if len(img_data.shape) == 3:
-                    gray = cv2.cvtColor(img_data, cv2.COLOR_BGR2GRAY)
-                else:
-                    gray = img_data
+                # C. 使用啟動時決定的 is_color 旗標，避免每幀 shape 判斷
+                gray = cv2.cvtColor(img_data, cv2.COLOR_BGR2GRAY) if is_color else img_data
 
                 # 如果指定了 downscale
                 detect_gray = _maybe_downscale(gray, args.downscale)
@@ -284,17 +479,12 @@ def run_with_flir_camera(det, args):
                 if args.downscale and args.downscale != 1.0:
                     results = _scale_results(results, 1.0 / args.downscale)
 
+                # 過濾低品質偵測
+                results = filter_detections(results, min_quality=args.min_quality)
+
                 frame_id += 1
 
-                # 繪製結果
-                if len(gray.shape) == 2:
-                    display = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-                else:
-                    display = gray.copy()
-
-                draw_detections(display, results)
-
-                # FPS 計算
+                # FPS 計算（每幀都更新，不受 display_skip 影響）
                 fps_counter += 1
                 elapsed = time.time() - fps_timer
                 if elapsed >= 1.0:
@@ -302,18 +492,31 @@ def run_with_flir_camera(det, args):
                     fps_counter = 0
                     fps_timer = time.time()
 
-                draw_osd(display, fps, detect_ms, len(results), det)
-                display = auto_scale(display)
-                cv2.imshow(window_name, display)
+                # A. 降頻顯示：每 display_skip 幀才更新視窗
+                if frame_id % display_skip == 0:
+                    display = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                    draw_detections(display, results, decode_bits=not args.no_bit_decode)
+                    draw_osd(display, fps, detect_ms, len(results), det, min_quality=args.min_quality)
+                    # B. 使用啟動時 cache 好的尺寸，避免每幀重算縮放比例
+                    if _display_size is not None:
+                        display = cv2.resize(display, _display_size, interpolation=cv2.INTER_LINEAR)
+                    else:
+                        display = auto_scale(display)
+                    cv2.imshow(window_name, display)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
                 elif key == ord("s"):
                     ts = time.strftime("%Y%m%d_%H%M%S")
-                    fname = f"cctag_capture_{ts}.jpg"
-                    cv2.imwrite(fname, display)
-                    print(f"[SAVE] {fname}")
+                    # 儲存時確保有最新 display
+                    save_disp = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                    draw_detections(save_disp, results, decode_bits=not args.no_bit_decode)
+                    draw_osd(save_disp, fps, detect_ms, len(results), det, min_quality=args.min_quality)
+                    oh, ow = save_disp.shape[:2]
+                    fname = f"cctag_capture_{ts}_{ow}x{oh}.jpg"
+                    cv2.imwrite(fname, save_disp)
+                    print(f"[SAVE] {fname} ({ow}x{oh})")
 
             except Exception as e:
                 print(f"[ERROR] {e}")
@@ -342,6 +545,9 @@ def run_on_webcam(det, args):
         print(f"[ERROR] 無法開啟 webcam index={args.cam_index}")
         return
 
+    # 盡量只保留最新幀，避免緩衝造成畫面延遲
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
     print(f"CCTag webcam 偵測中... 按 'q' 退出")
     _print_detector_config(det)
 
@@ -350,6 +556,15 @@ def run_on_webcam(det, args):
     fps_counter = 0
     fps_timer = time.time()
     frame_id = 0
+    display_skip = max(1, args.display_skip)
+
+    # ── 啟動時取一幀，決定顯示尺寸（只算一次）────────────────────────────────
+    _display_size: tuple[int, int] | None = None
+    ret0, frame0 = cap.read()
+    if ret0 and frame0 is not None:
+        _scaled0 = auto_scale(frame0)
+        _h0, _w0 = _scaled0.shape[:2]
+        _display_size = (_w0, _h0)
 
     try:
         while True:
@@ -367,10 +582,12 @@ def run_on_webcam(det, args):
             if args.downscale and args.downscale != 1.0:
                 results = _scale_results(results, 1.0 / args.downscale)
 
+            # 過濾低品質偵測
+            results = filter_detections(results, min_quality=args.min_quality)
+
             frame_id += 1
 
-            draw_detections(frame, results)
-
+            # FPS 計算（每幀都更新，不受 display_skip 影響）
             fps_counter += 1
             elapsed = time.time() - fps_timer
             if elapsed >= 1.0:
@@ -378,18 +595,26 @@ def run_on_webcam(det, args):
                 fps_counter = 0
                 fps_timer = time.time()
 
-            draw_osd(frame, fps, detect_ms, len(results), det)
-            display = auto_scale(frame)
-            cv2.imshow(window_name, display)
+            # A. 降頻顯示：每 display_skip 幀才更新視窗
+            if frame_id % display_skip == 0:
+                draw_detections(frame, results, decode_bits=not args.no_bit_decode)
+                draw_osd(frame, fps, detect_ms, len(results), det, min_quality=args.min_quality)
+                # B. 使用啟動時 cache 好的尺寸，避免每幀重算縮放比例
+                if _display_size is not None:
+                    display = cv2.resize(frame, _display_size, interpolation=cv2.INTER_LINEAR)
+                else:
+                    display = auto_scale(frame)
+                cv2.imshow(window_name, display)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
             elif key == ord("s"):
                 ts = time.strftime("%Y%m%d_%H%M%S")
-                fname = f"cctag_capture_{ts}.jpg"
+                oh, ow = frame.shape[:2]
+                fname = f"cctag_capture_{ts}_{ow}x{oh}.jpg"
                 cv2.imwrite(fname, frame)
-                print(f"[SAVE] {fname}")
+                print(f"[SAVE] {fname} ({ow}x{oh})")
 
     except KeyboardInterrupt:
         print("\n偵測結束")
@@ -423,14 +648,27 @@ def run_on_image(det, args):
     if args.downscale and args.downscale != 1.0:
         results = _scale_results(results, 1.0 / args.downscale)
 
+    # 過濾低品質偵測
+    results = filter_detections(results, min_quality=args.min_quality)
+
+    decode = not args.no_bit_decode
+
     print(f"[CCTag] 偵測到 {len(results)} 個 marker，耗時 {detect_ms:.1f}ms")
     for d in results:
         tag_id = d["id"]
         cx, cy = d["x"], d["y"]
         conf = d["quality"]
-        print(f"  ID:{tag_id}  center=({cx:.1f}, {cy:.1f})  conf={conf:.3f}")
+        line = f"  ID:{tag_id}  center=({cx:.1f}, {cy:.1f})  conf={conf:.3f}"
+        if decode:
+            dec = decode_data_cells(gray, d)
+            if dec["valid"]:
+                bit_str = "".join(str(dec["bits"][i]) for i in range(5, -1, -1))
+                line += f"  DATA:{dec['value']} (0b{bit_str})"
+            else:
+                line += "  DATA:invalid"
+        print(line)
 
-    draw_detections(frame, results)
+    draw_detections(frame, results, decode_bits=decode)
 
     # 加上偵測資訊文字
     info = f"Detected: {len(results)}  Time: {detect_ms:.1f}ms"
@@ -589,12 +827,35 @@ def build_parser():
     ident.add_argument("--no-identification", action="store_true",
                         help="完全跳過 ID 識別（只做定位）")
 
+    # ── 6-bit 資料格解碼 ─────────────────────────────────────────────────────
+    bits = parser.add_argument_group("6-bit 資料格解碼")
+    bits.add_argument("--no-bit-decode", action="store_true",
+                      help="停用左右資料格解碼（純 CCTag 偵測，速度略快）")
+
+    # ── 顯示降頻 ─────────────────────────────────────────────────────────────
+    disp = parser.add_argument_group("顯示降頻")
+    disp.add_argument("--display-skip", type=int, default=2, metavar="N",
+                      help="每 N 幀才更新視窗（預設 2）。detect 每幀仍執行，"
+                           "只有 imshow 降頻，可降低 X11/GPU 負擔。設 1 = 每幀更新")
+
+    # ── 過濾 / 品質門檻 ──────────────────────────────────────────────────────
+    filt = parser.add_argument_group("偵測結果過濾")
+    filt.add_argument("--min-quality", type=float, default=0.8,
+                      help="最低品質閾值，低於此值的偵測視為 false positive 並丟棄（預設 0.8）")
+
     return parser
 
 
 def main():
     parser = build_parser()
-    args = parser.parse_args()
+    argv = []
+    for a in sys.argv[1:]:
+        if a == "--filr":
+            print("[WARN] 參數 --filr 已自動更正為 --flir")
+            argv.append("--flir")
+        else:
+            argv.append(a)
+    args = parser.parse_args(argv)
 
     # 檢查是否指定了模式
     if not args.flir and not args.image and not args.webcam:

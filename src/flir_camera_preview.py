@@ -21,7 +21,15 @@ class FLIRCameraPreview:
         self.cam = None
         self.is_running = False
         self.image_processor = PySpin.ImageProcessor()
-        self.config = config or self.load_default_config()
+        # Always start from defaults, then merge user config on top
+        defaults = self.load_default_config()
+        if config:
+            for section, values in config.items():
+                if section in defaults and isinstance(defaults[section], dict) and isinstance(values, dict):
+                    defaults[section].update(values)
+                else:
+                    defaults[section] = values
+        self.config = defaults
         
     def load_default_config(self):
         """加載默認配置"""
