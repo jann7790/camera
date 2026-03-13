@@ -8,6 +8,7 @@ show_help() {
 
 常用範例:
   ./scripts/run_cctag.sh --flir
+  ./scripts/run_cctag.sh --flir --flip                    # 只左右翻轉 preview
   ./scripts/run_cctag.sh --flir --fast                    # 速度最優 preset
   ./scripts/run_cctag.sh --flir --fast --downscale 0.5   # 速度最優 + 縮圖偵測
   ./scripts/run_cctag.sh --flir --max-seeds 100 --no-lmdif
@@ -20,6 +21,7 @@ show_help() {
   --fast              自動套用速度最優參數組合：
                         --max-seeds 80 --max-candidates 10 --cuts-trials 80
                         --multires-layers 2
+  --flip              只將 preview 左右翻轉（鏡像），不影響實際偵測。
   --display-skip N    每 N 幀才更新視窗（預設 2）。detect 每幀跑，
                       只有顯示降頻，可降低 X11/GPU 負擔。
   --downscale F       偵測前縮小倍率（如 0.5），可大幅加速 CCTag 本身。

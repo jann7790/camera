@@ -175,18 +175,62 @@ def decode_data_cells(gray, d):
         patch = gray[y0c:y1c, x0c:x1c]
         cell_means.append(float(np.mean(patch)))
 
-    # 排序後找相鄰差值最大的間距，以間距兩側的中點作為黑白分割閾值
-    # 例如 [40,40,40,42,90,92] → 最大間距在 42→90，分割點 = 66 → 黑群/白群正確分開
-    sorted_vals = sorted(cell_means)
-    gaps = [sorted_vals[i + 1] - sorted_vals[i] for i in range(5)]
-    max_gap = max(gaps)
+    # ── 決定黑白分割閾值 ──────────────────────────────────────────────────
+    # 優先順序：
+    #   1. CCTag sig_black/sig_white（最可靠，來自 C++ 內部）
+    #   2. 最大 gap 法（適合混合黑白 cell）
+    #   3. 全相似時的 fallback（處理 all-black / all-white 的情況）
 
-    # 若最大間距過小，表示 6 格亮度無明顯黑白差異 → 視為無效
-    if max_gap < 10:
-        return _INVALID
+    sig_b = d.get("sig_black", 0.0)
+    sig_w = d.get("sig_white", 0.0)
+    use_sig = (sig_b > 0 or sig_w > 0) and sig_w > sig_b
+    print(sig_b, sig_w)
+    print(cell_means)
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    # tmp
+    use_sig = 0
+    if use_sig:
+        # 路徑 1：使用 CCTag 內部估計的黑/白訊號強度中點
+        threshold = (sig_b + sig_w) / 2.0
+    else:
+        # 路徑 2：排序後找相鄰差值最大的間距，以間距兩側的中點作為分割閾值
+        sorted_vals = sorted(cell_means)
+        gaps = [sorted_vals[i + 1] - sorted_vals[i] for i in range(5)]
+        max_gap = max(gaps)
 
-    split_idx = gaps.index(max_gap)
-    threshold = (sorted_vals[split_idx] + sorted_vals[split_idx + 1]) / 2.0
+        if max_gap >= 10:
+            # 正常混合黑白 cell：以最大 gap 中點為閾值
+            split_idx = gaps.index(max_gap)
+            threshold = (sorted_vals[split_idx] + sorted_vals[split_idx + 1]) / 2.0
+        else:
+            # 路徑 3：all-black 或 all-white — 6 格亮度幾乎相同，無法用 gap 分割。
+            # 改用影像全域中位數作為參考閾值，判斷這批 cell 偏暗（全黑）還是偏亮（全白）。
+            # 若無法取得全域統計，退而使用固定中點 128。
+            global_median = float(np.median(gray))
+            avg_cell = sum(cell_means) / len(cell_means)
+            if avg_cell <= global_median:
+                # 所有 cell 都暗 → 全部視為黑 (bit=1)，閾值設在 cell 亮度之上
+                threshold = avg_cell + 1.0
+            else:
+                # 所有 cell 都亮 → 全部視為白 (bit=0)，閾值設在 cell 亮度之下
+                threshold = avg_cell - 1.0
 
     bits = [0] * 6
     for roi_i, mean_val in enumerate(cell_means):
@@ -635,6 +679,8 @@ def run_on_image(det, args):
         print(f"[ERROR] 無法讀取圖片: {image_path}")
         return
 
+    frame = _maybe_flip_horizontal(frame, args.flip)
+
     print(f"[CCTag] 圖片: {image_path} ({frame.shape[1]}x{frame.shape[0]})")
     _print_detector_config(det)
 
@@ -708,6 +754,13 @@ def _maybe_downscale(gray, downscale):
     return cv2.resize(gray, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
 
+def _maybe_flip_horizontal(image, do_flip):
+    """如果指定了 flip 就做左右翻轉。"""
+    if not do_flip:
+        return image
+    return cv2.flip(image, 1)
+
+
 def _scale_results(results, scale):
     """將偵測結果座標按比例映射回原始解析度。"""
     scaled = []
@@ -756,6 +809,9 @@ def build_parser():
   # FLIR + 輸入圖像縮小 50%
   python cctag_detector.py --flir --downscale 0.5
 
+  # FLIR + 左右翻轉
+  python cctag_detector.py --flir --flip   # 只翻轉 preview
+
   # 對靜態圖片偵測
   python cctag_detector.py --image photo.jpg
 
@@ -778,6 +834,8 @@ def build_parser():
 
     # ── 輸入前處理 ───────────────────────────────────────────────────────────
     pre = parser.add_argument_group("輸入前處理")
+    pre.add_argument("--flip", action="store_true",
+                      help="只將預覽畫面左右翻轉（鏡像），不影響實際偵測")
     pre.add_argument("--downscale", type=float, default=None,
                       help="偵測前縮小倍率（如 0.5 = 縮小一半），可大幅加速")
 

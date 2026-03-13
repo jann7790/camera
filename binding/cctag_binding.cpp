@@ -53,6 +53,8 @@ static py::list markers_to_pylist(const cctag::CCTag::List& markers)
         d["ellipse_a"]         = static_cast<double>(ell.a());
         d["ellipse_b"]         = static_cast<double>(ell.b());
         d["ellipse_angle_rad"] = static_cast<double>(ell.angle());
+        d["sig_black"]         = static_cast<double>(tag.sigBlack());
+        d["sig_white"]         = static_cast<double>(tag.sigWhite());
         result.append(d);
     }
     return result;
